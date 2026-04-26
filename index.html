@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TP4 - SNL | Commande par Modes Glissants (Quadricoptère)</title>
+    
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <style>
+        /* =========================================================================
+        1. THÈME "DEEP SPACE" & VARIABLES GLOBALES
+        ========================================================================= */
+        :root {
+            --space-dark: #04060a;
+            --space-light: #0d111a;
+            --panel-bg: rgba(10, 14, 24, 0.85);
+            --panel-border: rgba(0, 240, 255, 0.2);
+            --panel-glow: rgba(0, 240, 255, 0.08);
+            --neon-cyan: #00f0ff;
+            --neon-magenta: #ff007f;
+            --neon-purple: #8a2be2;
+            --neon-yellow: #ffea00;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --font-main: 'Inter', system-ui, sans-serif;
+            --font-mono: 'Fira Code', 'Consolas', monospace;
+            --grid-color: rgba(255, 255, 255, 0.03);
+            --glass-blur: blur(20px);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            background-color: var(--space-dark);
+            background-image: linear-gradient(var(--grid-color) 1px, transparent 1px), linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 50px 50px;
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            line-height: 1.6;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+            background: radial-gradient(circle at 30% 40%, rgba(138, 43, 226, 0.05), transparent 50%),
+                        radial-gradient(circle at 70% 60%, rgba(0, 240, 255, 0.05), transparent 50%);
+            z-index: -1; pointer-events: none;
+        }
+
+        /* =========================================================================
+        2. GRILLES ET PANNEAUX
+        ========================================================================= */
+        .dashboard { max-width: 1600px; margin: 0 auto; padding: 2rem; display: grid; grid-template-columns: repeat(12, 1fr); gap: 2rem; }
+        .col-12 { grid-column: span 12; } .col-8 { grid-column: span 8; } .col-6 { grid-column: span 6; } .col-4 { grid-column: span 4; }
+        @media (max-width: 1200px) { .col-8, .col-4 { grid-column: span 12; } }
+        @media (max-width: 900px) { .col-6 { grid-column: span 12; } }
+
+        .panel {
+            background: var(--panel-bg); border: 1px solid var(--panel-border);
+            border-radius: 16px; padding: 2rem; backdrop-filter: var(--glass-blur);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+            transition: all 0.3s ease; position: relative;
+        }
+        .panel:hover { border-color: rgba(0, 240, 255, 0.5); box-shadow: 0 15px 40px var(--panel-glow); }
+        .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 1rem; }
+        .panel-title { font-size: 1.5rem; font-weight: 700; color: var(--neon-cyan); text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
+        .panel-title::before { content: '/>'; color: var(--neon-magenta); font-family: var(--font-mono); }
+
+        /* Typographie */
+        .title-glitch { text-align: center; font-size: 3rem; font-weight: 900; background: linear-gradient(to right, var(--neon-cyan), var(--neon-purple), var(--neon-magenta)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 2rem 0 0.5rem; }
+        .subtitle { text-align: center; font-size: 1.2rem; color: var(--text-secondary); font-family: var(--font-mono); margin-bottom: 2rem; grid-column: span 12; }
+        p { margin-bottom: 1rem; color: #cbd5e1; text-align: justify; }
+        .highlight { color: var(--neon-cyan); font-weight: 600; }
+        .danger { color: var(--neon-magenta); font-weight: 600; }
+
+        .math-block {
+            background: rgba(0, 0, 0, 0.7); border-left: 4px solid var(--neon-purple);
+            padding: 1.5rem; margin: 1.5rem 0; border-radius: 0 8px 8px 0;
+            color: #fff; overflow-x: auto; box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+
+        /* =========================================================================
+        3. ATELIER DE CÂBLAGE SIMULINK (NODE EDITOR)
+        ========================================================================= */
+        .workspace {
+            width: 100%; height: 500px; background: #080a10; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.05); position: relative; overflow: hidden;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.9);
+            background-image: radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .node {
+            position: absolute; background: rgba(20, 25, 40, 0.95);
+            border: 2px solid var(--neon-cyan); border-radius: 8px;
+            width: 180px; padding: 10px; color: #fff; font-family: var(--font-mono); font-size: 0.85rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); cursor: move; user-select: none; z-index: 10;
+        }
+        .node.attitude { border-color: var(--neon-magenta); }
+        .node.quad { border-color: var(--neon-purple); width: 200px; }
+        
+        .node-title { font-weight: bold; text-align: center; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+        
+        .port {
+            width: 14px; height: 14px; background: #fff; border: 2px solid var(--space-dark);
+            border-radius: 50%; position: absolute; cursor: crosshair; transition: 0.2s;
+        }
+        .port:hover { transform: scale(1.5); background: var(--neon-yellow); }
+        .port.active { background: var(--neon-yellow); box-shadow: 0 0 10px var(--neon-yellow); }
+
+        .port-in { left: -8px; }
+        .port-out { right: -8px; }
+
+        .port-row { display: flex; justify-content: space-between; align-items: center; position: relative; height: 25px; }
+        .port-label { font-size: 0.75rem; color: #94a3b8; }
+        .port-label.left { margin-left: 10px; } .port-label.right { margin-right: 10px; text-align: right; width: 100%; }
+
+        svg.wires { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+        .wire { fill: none; stroke: var(--neon-cyan); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--neon-cyan)); }
+        .wire-temp { stroke: var(--neon-yellow); stroke-dasharray: 5,5; opacity: 0.7; }
+
+        .sys-msg { position: absolute; bottom: 10px; left: 10px; font-family: var(--font-mono); color: var(--neon-yellow); font-size: 0.9rem; z-index: 20;}
+
+        /* =========================================================================
+        4. CONTRÔLES INTERACTIFS & PLOTLY
+        ========================================================================= */
+        .control-board { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.2rem; }
+        .slider-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        .slider-header { display: flex; justify-content: space-between; align-items: center; }
+        .slider-label { font-size: 0.95rem; color: var(--neon-cyan); font-weight: 600; }
+        .slider-value { background: rgba(0, 240, 255, 0.1); border: 1px solid var(--neon-cyan); padding: 0.2rem 0.6rem; border-radius: 4px; font-family: var(--font-mono); color: #fff; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+        input[type=range]::-webkit-slider-thumb { height: 18px; width: 18px; border-radius: 50%; background: var(--neon-purple); cursor: pointer; -webkit-appearance: none; margin-top: -6px; transition: 0.2s; box-shadow: 0 0 10px rgba(138,43,226,0.6); }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); background: var(--neon-magenta); }
+
+        .btn-cyber { background: linear-gradient(45deg, rgba(138,43,226,0.2), rgba(0,240,255,0.2)); border: 1px solid var(--neon-cyan); color: #fff; padding: 1rem; font-family: var(--font-mono); font-weight: bold; text-transform: uppercase; letter-spacing: 2px; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; width: 100%; margin-top: 1rem; }
+        .btn-cyber:hover { background: linear-gradient(45deg, rgba(138,43,226,0.5), rgba(0,240,255,0.5)); box-shadow: 0 0 20px rgba(0, 240, 255, 0.4); transform: translateY(-2px); }
+
+        .plot-container { width: 100%; height: 500px; background: #020305; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05); margin-top: 1rem; box-shadow: inset 0 0 30px rgba(0,0,0,1); }
+
+        pre { background: #010204; padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); overflow-x: auto; font-family: var(--font-mono); font-size: 0.95rem; line-height: 1.6; color: #a6accd; }
+        .signature { text-align: center; padding: 3rem 0; margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.05); font-family: var(--font-mono); color: var(--neon-purple); letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 0 10px rgba(138, 43, 226, 0.5); }
+    </style>
+</head>
+<body>
+
+<div class="dashboard">
+    <div class="col-12">
+        <h1 class="title-glitch">COMMANDE PAR MODES GLISSANTS</h1>
+        <div class="subtitle">TP N°4 - Contrôle Robuste d'un Quadricoptère (SMC) à 6 DDL</div>
+    </div>
+
+    <section class="panel col-12">
+        <div class="panel-header"><h2 class="panel-title">1. Synthèse Analytique par Modes Glissants (Q2 & Q3)</h2></div>
+        
+        <p>L'objectif de la commande par modes glissants (Sliding Mode Control - SMC) est de forcer les trajectoires d'état à atteindre une surface prédéfinie \( S = 0 \), puis à glisser le long de celle-ci vers l'origine (erreur nulle).</p>
+
+        <div class="dashboard" style="padding:0; gap:2rem;">
+            <div class="col-6">
+                <p><span class="highlight">A. Surface de Glissement et Dynamique d'Erreur</span></p>
+                <p>Définissons l'erreur de poursuite \( e_i = x_{id} - x_i \). La surface de glissement pour un système du second ordre est choisie de type Hurwitz :</p>
+                <div class="math-block">
+                    \[ S_i = \dot{e}_i + \lambda_i e_i \quad \text{avec } \lambda_i > 0 \]
+                </div>
+                <p>Prenons l'exemple du contrôle d'altitude \( z \) (où \( x_5 = z \), \( x_6 = \dot{z} \)). L'équation dynamique est :</p>
+                <div class="math-block">
+                    \[ \dot{x}_6 = f_6(X) + g_6(X)U_z \]
+                    \[ f_6(X) = -\frac{1}{m}(k_{dz}x_6 + mg) \]
+                    \[ g_6(X) = \frac{\cos(\phi)\cos(\theta)}{m} \]
+                </div>
+            </div>
+            
+            <div class="col-6">
+                <p><span class="danger">B. Loi de Commande et Preuve de Stabilité de Lyapunov (Q3)</span></p>
+                <p>Pour garantir la convergence vers la surface \( S_z = 0 \), nous utilisons une fonction candidate de Lyapunov définie positive : \( V = \frac{1}{2}S_z^2 \).</p>
+                <p>Pour assurer l'attractivité, sa dérivée doit être définie négative : \( \dot{V} = S_z \dot{S}_z < 0 \). On impose la condition stricte : <span class="highlight">\( \dot{S}_z = -K_z \text{sgn}(S_z) \)</span>.</p>
+                <div class="math-block">
+                    \[ \dot{S}_z = \ddot{z}_d - \dot{x}_6 + \lambda_z \dot{e}_z \]
+                    \[ \dot{S}_z = \ddot{z}_d - (f_6(X) + g_6(X)U_z) + \lambda_z \dot{e}_z \]
+                </div>
+                <p>En isolant \( U_z \), nous obtenons la loi de commande finale :</p>
+                <div class="math-block" style="border-left-color: var(--neon-magenta);">
+                    \[ U_z = \frac{m}{\cos(\phi)\cos(\theta)} \left( \ddot{z}_d - f_6(X) + \lambda_z \dot{e}_z + K_z \text{sgn}(S_z) \right) \]
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel col-12">
+        <div class="panel-header"><h2 class="panel-title">2. Câblage de l'Architecture Hiérarchique (Schéma Blocs)</h2></div>
+        <p><strong>Instructions :</strong> Cliquez sur un port de sortie <span style="color:var(--neon-cyan)">[O]</span> puis sur un port d'entrée <span style="color:var(--neon-cyan)">[I]</span> correspondant pour câbler le système. Complétez les 5 connexions requises pour valider l'architecture du quadricoptère.</p>
+        
+        <div class="workspace" id="workspace">
+            <svg class="wires" id="wires-layer"></svg>
+            <div class="sys-msg" id="wiring-msg">Câbles connectés : 0/5</div>
+
+            <div class="node" id="node-ref" style="left: 30px; top: 180px;">
+                <div class="node-title">Générateur Trajectoire</div>
+                <div class="port-row">
+                    <span class="port-label right">Pos_d (x,y,z)</span>
+                    <div class="port port-out" data-node="ref" data-port="pos_d" style="top:5px;"></div>
+                </div>
+            </div>
+
+            <div class="node" id="node-smc-pos" style="left: 280px; top: 80px;">
+                <div class="node-title">SMC Position</div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="smc_pos" data-port="pos_d" style="top:5px;"></div>
+                    <span class="port-label left">Pos_d</span>
+                    <span class="port-label right">U_z</span>
+                    <div class="port port-out" data-node="smc_pos" data-port="uz" style="top:5px;"></div>
+                </div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="smc_pos" data-port="etat" style="top:5px;"></div>
+                    <span class="port-label left">Etat (X)</span>
+                    <span class="port-label right">Att_d (\(\phi,\theta\))</span>
+                    <div class="port port-out" data-node="smc_pos" data-port="att_d" style="top:5px;"></div>
+                </div>
+            </div>
+
+            <div class="node attitude" id="node-smc-att" style="left: 600px; top: 80px;">
+                <div class="node-title">SMC Attitude</div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="smc_att" data-port="att_d" style="top:5px;"></div>
+                    <span class="port-label left">Att_d</span>
+                    <span class="port-label right">U_rot (\(\tau\))</span>
+                    <div class="port port-out" data-node="smc_att" data-port="urot" style="top:5px;"></div>
+                </div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="smc_att" data-port="etat" style="top:5px;"></div>
+                    <span class="port-label left">Etat (X)</span>
+                </div>
+            </div>
+
+            <div class="node quad" id="node-quad" style="left: 950px; top: 180px;">
+                <div class="node-title">Dynamique Quadricoptère</div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="quad" data-port="uz" style="top:5px;"></div>
+                    <span class="port-label left">U_z (Portance)</span>
+                    <span class="port-label right">Etat (X)</span>
+                    <div class="port port-out" data-node="quad" data-port="etat_out" style="top:5px;"></div>
+                </div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="quad" data-port="urot" style="top:5px;"></div>
+                    <span class="port-label left">U_rot (Couples)</span>
+                </div>
+            </div>
+            
+            <div class="node" id="node-feed" style="left: 550px; top: 400px; width: 100px;">
+                <div class="node-title">Capteurs</div>
+                <div class="port-row">
+                    <div class="port port-in" data-node="feed" data-port="in" style="top:5px;"></div>
+                    <span class="port-label left">In</span>
+                    <span class="port-label right">Out</span>
+                    <div class="port port-out" data-node="feed" data-port="out" style="top:5px;"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel col-4">
+        <div class="panel-header"><h2 class="panel-title">Paramètres de Vol SMC</h2></div>
+        
+        <div class="control-board">
+            <div class="slider-group">
+                <div class="slider-header"><span class="slider-label">Cible X [m]</span><span class="slider-value" id="val-xd">2.0</span></div>
+                <input type="range" id="param-xd" min="-5" max="5" step="0.5" value="2">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header"><span class="slider-label">Cible Y [m]</span><span class="slider-value" id="val-yd">2.0</span></div>
+                <input type="range" id="param-yd" min="-5" max="5" step="0.5" value="2">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header"><span class="slider-label">Altitude Z [m]</span><span class="slider-value" id="val-zd">5.0</span></div>
+                <input type="range" id="param-zd" min="0" max="10" step="0.5" value="5">
+            </div>
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 0.5rem 0;">
+            <div class="slider-group">
+                <div class="slider-header"><span class="slider-label">Gain K (Attractivité)</span><span class="slider-value" id="val-kx">5.0</span></div>
+                <input type="range" id="param-kx" min="1" max="15" step="0.5" value="5">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header"><span class="slider-label">Pente λ (Surface)</span><span class="slider-value" id="val-lam">3.0</span></div>
+                <input type="range" id="param-lam" min="1" max="10" step="0.5" value="3">
+            </div>
+            <button id="btn-sim" class="btn-cyber">Lancer la Simulation (RK4)</button>
+        </div>
+    </section>
+
+    <section class="panel col-8">
+        <div class="panel-header"><h2 class="panel-title">Trajectoire Spatiale 3D</h2></div>
+        <div id="plot-3d" class="plot-container"></div>
+    </section>
+
+    <section class="panel col-12">
+        <div class="panel-header"><h2 class="panel-title">Code MATLAB Associé</h2></div>
+<pre><code><span class="tk-comment">% =========================================================================</span>
+<span class="tk-comment">% TP4 : Modélisation et Commande par Modes Glissants d'un Quadricoptère</span>
+<span class="tk-comment">% =========================================================================</span>
+
+<span class="tk-keyword">function</span> dX = quad_dynamics(t, X, pos_d, m, g, Ix, Iy, Iz, Ir, kdt, kdr, L, K)
+    <span class="tk-comment">% Extraction des états X = [x, dx, y, dy, z, dz, phi, p, theta, q, psi, r]</span>
+    x1=X(<span class="tk-number">1</span>); x2=X(<span class="tk-number">2</span>); x3=X(<span class="tk-number">3</span>); x4=X(<span class="tk-number">4</span>); x5=X(<span class="tk-number">5</span>); x6=X(<span class="tk-number">6</span>);
+    phi=X(<span class="tk-number">7</span>); p=X(<span class="tk-number">8</span>); th=X(<span class="tk-number">9</span>); q=X(<span class="tk-number">10</span>); psi=X(<span class="tk-number">11</span>); r=X(<span class="tk-number">12</span>);
+    
+    <span class="tk-comment">% Consignes actuelles</span>
+    ref = pos_d(t); xd = ref(<span class="tk-number">1</span>); yd = ref(<span class="tk-number">2</span>); zd = ref(<span class="tk-number">3</span>); psid = ref(<span class="tk-number">4</span>);
+    
+    <span class="tk-comment">% --- BOUCLE EXTERNE : Contrôle de Position (X, Y, Z) ---</span>
+    ez = zd - x5; evz = <span class="tk-number">0</span> - x6; Sz = evz + L(<span class="tk-number">3</span>)*ez;
+    f6 = -(kdt*x6 + m*g)/m; g6 = cos(phi)*cos(th)/m;
+    Uz = (<span class="tk-number">1</span>/g6) * (-f6 + L(<span class="tk-number">3</span>)*evz + K(<span class="tk-number">3</span>)*sign(Sz));
+    
+    <span class="tk-comment">% Suite de la boucle SMC (Ux, Uy) et Boucle Interne (Uphi, Uth, Upsi)...</span>
+<span class="tk-keyword">end</span>
+</code></pre>
+    </section>
+
+    <div class="signature col-12">created by DAHANE AHMED LAMINE</div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // =====================================================================
+        // LOGIQUE DU NODE EDITOR (ATELIER DE CÂBLAGE SVG)
+        // =====================================================================
+        const workspace = document.getElementById('workspace');
+        const wiresLayer = document.getElementById('wires-layer');
+        const ports = document.querySelectorAll('.port');
+        
+        let activePort = null;
+        let connections = [];
+        const requiredConnections = 5;
+
+        // Mise à jour visuelle des câbles
+        function drawWires() {
+            wiresLayer.innerHTML = '';
+            connections.forEach(conn => {
+                const p1 = getPortCenter(conn.out);
+                const p2 = getPortCenter(conn.in);
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                // Courbe de Bezier pour le style Simulink
+                const d = `M ${p1.x} ${p1.y} C ${p1.x + 50} ${p1.y}, ${p2.x - 50} ${p2.y}, ${p2.x} ${p2.y}`;
+                path.setAttribute('d', d);
+                path.setAttribute('class', 'wire');
+                wiresLayer.appendChild(path);
+            });
+            document.getElementById('wiring-msg').innerText = `Câbles connectés : ${connections.length}/${requiredConnections}`;
+            if(connections.length >= requiredConnections) {
+                document.getElementById('wiring-msg').innerText = `Câblage Terminé ! Architecture Validée.`;
+                document.getElementById('wiring-msg').style.color = 'var(--neon-green)';
+            }
+        }
+
+        function getPortCenter(portEl) {
+            const rect = portEl.getBoundingClientRect();
+            const wsRect = workspace.getBoundingClientRect();
+            return { x: rect.left - wsRect.left + rect.width/2, y: rect.top - wsRect.top + rect.height/2 };
+        }
+
+        // Événements de clic sur les ports
+        ports.forEach(port => {
+            port.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOut = port.classList.contains('port-out');
+                
+                if (!activePort) {
+                    if(isOut) { activePort = port; port.classList.add('active'); }
+                } else {
+                    if (!isOut && port.dataset.node !== activePort.dataset.node) {
+                        // Connexion valide (Out -> In)
+                        connections.push({ out: activePort, in: port });
+                        activePort.classList.remove('active');
+                        activePort = null;
+                        drawWires();
+                    } else {
+                        // Annulation
+                        activePort.classList.remove('active');
+                        activePort = null;
+                    }
+                }
+            });
+        });
+
+        // =====================================================================
+        // LOGIQUE DE SIMULATION 6-DDL (RUNGE-KUTTA 4)
+        // =====================================================================
+        const m = 1.1, g = 9.81, Ix = 1.22, Iy = 1.22, Iz = 2.2, kdt = 0.1, kdr = 0.12;
+        const smooth_sign = (s, eps = 0.1) => Math.tanh(s / eps);
+
+        function simulate6DOF() {
+            const xd = parseFloat(document.getElementById('param-xd').value);
+            const yd = parseFloat(document.getElementById('param-yd').value);
+            const zd = parseFloat(document.getElementById('param-zd').value);
+            const k_trans = parseFloat(document.getElementById('param-kx').value);
+            const lam = parseFloat(document.getElementById('param-lam').value);
+            
+            const K = [k_trans, k_trans, k_trans*2, 10, 10, 5]; 
+            const L = [lam, lam, lam, 5, 5, 4];
+
+            let t = 0, dt = 0.02, t_max = 10;
+            let X = [0,0, 0,0, 0,0, 0,0, 0,0, 0,0];
+            let history = { x: [], y: [], z: [] };
+
+            const compute_derivatives = (state) => {
+                let [x, dx, y, dy, z, dz, phi, dphi, th, dth, psi, dpsi] = state;
+                let psid = 0; 
+
+                // SMC Position
+                let ez = zd - z, evz = 0 - dz; let Sz = evz + L[2]*ez;
+                let f6 = -(kdt*dz + m*g)/m; let g6 = Math.max(0.1, Math.cos(phi)*Math.cos(th)/m);
+                let Uz = (1/g6) * (-f6 + L[2]*evz + K[2]*smooth_sign(Sz));
+
+                let ex = xd - x, evx = 0 - dx; let Sx = evx + L[0]*ex;
+                let Ux = m * ((kdt/m)*dx + L[0]*evx + K[0]*smooth_sign(Sx));
+
+                let ey = yd - y, evy = 0 - dy; let Sy = evy + L[1]*ey;
+                let Uy = m * ((kdt/m)*dy + L[1]*evy + K[1]*smooth_sign(Sy));
+
+                let thrust = Math.max(Uz/m, 0.1); 
+                let phi_d = Math.asin(Math.max(-1, Math.min(1, (Ux*Math.sin(psid) - Uy*Math.cos(psid)) / thrust)));
+                let th_d = Math.asin(Math.max(-1, Math.min(1, (Ux*Math.cos(psid) + Uy*Math.sin(psid)) / (Math.cos(phi_d)*thrust))));
+
+                // SMC Attitude
+                let ephi = phi_d - phi, evphi = 0 - dphi; let Sphi = evphi + L[3]*ephi;
+                let f8 = ((Iy-Iz)*dth*dpsi - kdr*dphi*dphi)/Ix;
+                let Uphi = Ix * (-f8 + L[3]*evphi + K[3]*smooth_sign(Sphi));
+
+                let eth = th_d - th, evth = 0 - dth; let Sth = evth + L[4]*eth;
+                let f10 = ((Iz-Ix)*dphi*dpsi - kdr*dth*dth)/Iy;
+                let Uth = Iy * (-f10 + L[4]*evth + K[4]*smooth_sign(Sth));
+
+                let epsi = psid - psi, evpsi = 0 - dpsi; let Spsi = evpsi + L[5]*epsi;
+                let f12 = ((Ix-Iy)*dphi*dth - kdr*dpsi*dpsi)/Iz;
+                let Upsi = Iz * (-f12 + L[5]*evpsi + K[5]*smooth_sign(Spsi));
+
+                return [
+                    dx, -(kdt/m)*dx + Ux/m,
+                    dy, -(kdt/m)*dy + Uy/m,
+                    dz, -(kdt/m)*dz - g + (Math.cos(phi)*Math.cos(th)/m)*Uz,
+                    dphi, f8 + Uphi/Ix,
+                    dth, f10 + Uth/Iy,
+                    dpsi, f12 + Upsi/Iz
+                ];
+            };
+
+            while (t < t_max) {
+                if (Math.abs(t % 0.06) < dt) { history.x.push(X[0]); history.y.push(X[2]); history.z.push(X[4]); }
+                let k1 = compute_derivatives(X);
+                let X_k2 = X.map((val, i) => val + 0.5 * dt * k1[i]);
+                let k2 = compute_derivatives(X_k2);
+                let X_k3 = X.map((val, i) => val + 0.5 * dt * k2[i]);
+                let k3 = compute_derivatives(X_k3);
+                let X_k4 = X.map((val, i) => val + dt * k3[i]);
+                let k4 = compute_derivatives(X_k4);
+                X = X.map((val, i) => val + (dt/6) * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
+                t += dt;
+            }
+            return history;
+        }
+
+        function renderPlots() {
+            const data = simulate6DOF();
+            const trace3D = { x: data.x, y: data.y, z: data.z, mode: 'lines', line: { color: '#00f0ff', width: 4 }, type: 'scatter3d', name: 'Trajectoire' };
+            const traceStart = { x: [0], y: [0], z: [0], mode: 'markers', marker: {color: '#8a2be2', size: 6}, type: 'scatter3d', name: 'Départ' };
+            const traceEnd = { 
+                x: [parseFloat(document.getElementById('param-xd').value)], 
+                y: [parseFloat(document.getElementById('param-yd').value)], 
+                z: [parseFloat(document.getElementById('param-zd').value)], 
+                mode: 'markers', marker: {color: '#ff007f', size: 8, symbol: 'diamond'}, type: 'scatter3d', name: 'Cible' 
+            };
+
+            const layout3D = {
+                paper_bgcolor: 'transparent', margin: { l: 0, r: 0, b: 0, t: 0 },
+                scene: {
+                    xaxis: { title: 'X', gridcolor: 'rgba(255,255,255,0.1)', backgroundcolor: 'transparent' },
+                    yaxis: { title: 'Y', gridcolor: 'rgba(255,255,255,0.1)', backgroundcolor: 'transparent' },
+                    zaxis: { title: 'Z', gridcolor: 'rgba(255,255,255,0.1)', backgroundcolor: 'transparent' },
+                    camera: { eye: {x: 1.5, y: 1.5, z: 1.2} }
+                }, font: { color: '#e2e8f0' }, showlegend: true, legend: { x: 0, y: 1, bgcolor: 'rgba(0,0,0,0.5)' }
+            };
+            Plotly.newPlot('plot-3d', [trace3D, traceStart, traceEnd], layout3D, {displayModeBar: false});
+        }
+
+        // Listeners UI
+        document.querySelectorAll('input[type="range"]').forEach(el => {
+            el.addEventListener('input', (e) => { document.getElementById('val-' + e.target.id.split('-')[1]).innerText = parseFloat(e.target.value).toFixed(1); });
+        });
+        document.getElementById('btn-sim').addEventListener('click', renderPlots);
+
+        // Initialisation
+        renderPlots();
+    });
+</script>
+
+</body>
+</html>
